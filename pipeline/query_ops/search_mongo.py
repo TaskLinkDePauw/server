@@ -35,10 +35,11 @@ def search_mongo(
     pipeline.append({
         "$project": {
             "_id": 1,
+            "supplier_id": 1,    # If you store it
             "pdf_file": 1,
             "chunk_text": 1,
             "score": {"$meta": "vectorSearchScore"},
-            "role": 1
+            "service_role": 1
         }
     })
 

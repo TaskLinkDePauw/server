@@ -1,4 +1,22 @@
-class EnhancedRAGPipeline:
+import os
+import uuid
+import openai
+from pymongo.mongo_client import MongoClient
+from pymongo.server_api import ServerApi
+from sentence_transformers import SentenceTransformer
+
+# Local imports
+from .log_utils import log_event
+from .data_storing.chunking_utils import read_and_chunk_pdf_adaptive
+from .data_storing.embedding_utils import embed_and_store, embed_and_store_in_batches, batch_embed_texts
+from .routing.router import route_query_keyword, route_query_llm, route_query_semantic
+from .re_rank.re_rank import re_rank_results
+from .output.structured_output import build_summary_prompt, ask_chatgpt_structured
+from .query_ops.multi_query import generate_multi_queries
+from .query_ops.query_decomposition import decompose_query
+from .query_ops.search_mongo import search_mongo
+
+class RAGPipeline:
     """
     An upgraded pipeline that supports:
     - Multi-Query Generation
@@ -132,6 +150,36 @@ class EnhancedRAGPipeline:
         )
 
     def rag_search(self, user_query, top_k=3, re_rank_method=None):
+        log_event("SearchStart", user_query)
+
+        # 1) Routing
+        roles = self.route_query(user_query)
+        log_event("Routing", f"Chosen roles: {roles}")
+
+        # 2) Query Decomposition
+        sub_queries = self.decompose_query(user_query)
+        # (We already log_event inside decompose_query, but you could do more logging here if desired)
+
+        # 3) Multi-Query Generation (just for the first sub-query)
+        expanded_queries = self.generate_multi_queries(sub_queries[0], num_queries=2)
+
+        # 4) Retrieve documents
+        all_results = []
+        for eq in expanded_queries:
+            partial = self.search_mongo(eq, top_k=top_k, roles_filter=roles)
+            all_results.extend(partial)
+
+        # 5) Re-rank / fuse
+        if re_rank_method:
+            final_results = self.re_rank_results(user_query, all_results, method=re_rank_method, top_k=top_k)
+        else:
+            sorted_res = sorted(all_results, key=lambda x: x["score"], reverse=True)
+            final_results = sorted_res[:top_k]
+
+        log_event("SearchDone", f"Final result count: {len(final_results)}")
+        return final_results
+    
+    def search_supplier(self, user_query, top_k=3, re_rank_method="reciprocal_rank_fusion"):
         log_event("SearchStart", user_query)
 
         # 1) Routing

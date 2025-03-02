@@ -1,6 +1,8 @@
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, time
 from decimal import Decimal
+from typing import Optional
+
 
 # ------------------------
 # Users
@@ -298,7 +300,11 @@ class Appointment(BaseModel):
     supplier_id: str
     customer_id: str
     appointment_time: datetime
+    end_time: Optional[datetime]
     created_at: datetime
+    
+    class Config:
+        orm_mode = True
 
 class AppointmentCreate(BaseModel):
     """
@@ -314,3 +320,22 @@ class AppointmentCreate(BaseModel):
     supplier_id: str
     customer_id: str
     appointment_time: datetime
+    end_time: Optional[datetime] = None
+
+
+# ------------------------
+# Supplier Availabilities
+# ------------------------
+class SupplierAvailabilityBase(BaseModel):
+    supplier_id: str
+    day_of_week: str
+    start_time: time
+    end_time: time
+
+class SupplierAvailabilityCreate(SupplierAvailabilityBase):
+    pass
+
+class SupplierAvailability(SupplierAvailabilityBase):
+    id: str
+    class Config:
+        orm_mode = True

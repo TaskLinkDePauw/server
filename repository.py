@@ -2,6 +2,8 @@ import uuid
 from sqlalchemy.orm import Session
 import models, schemas
 import utils
+from sqlalchemy import func, and_
+
 
 # ------------------------
 # Users
@@ -234,6 +236,39 @@ def get_review(db: Session, review_id: int):
     return db.query(models.Review).filter(models.Review.id == review_id).first()
 
 # ------------------------
+# Ratings
+# ------------------------
+# 1) Average rating for a supplier
+def get_supplier_avg_rating(db: Session, supplier_id: str) -> float:
+    """
+    Return the average rating from 'reviews' table for the given supplier_id.
+    If no reviews, return 0.0 (or some default).
+    """
+    result = db.query(func.avg(models.Review.rating)).filter(models.Review.supplier_id == supplier_id).first()
+    if result and result[0]:
+        return float(result[0])
+    return 0.0
+
+# 2) Checking supplier availability
+def is_supplier_available(db: Session, supplier_id: str, day_of_week: str, start_time, end_time) -> bool:
+    """
+    Returns True if the supplier has an availability record that covers
+    the desired day_of_week and time range [start_time, end_time).
+    We'll assume you store day_of_week, start_time, end_time in the 'supplier_availabilities' table.
+    """
+    # Example:
+    # supplier_availabilities: id, supplier_id, day_of_week, start_time, end_time
+    # We'll do a query that checks if there's at least one record
+    # that covers the requested timeframe.
+    availability = db.query(models.SupplierAvailability).filter(
+        models.SupplierAvailability.supplier_id == supplier_id,
+        models.SupplierAvailability.day_of_week == day_of_week.lower(),
+        models.SupplierAvailability.start_time <= start_time,
+        models.SupplierAvailability.end_time >= end_time
+    ).first()
+    return availability is not None
+
+# ------------------------
 # Services
 # ------------------------
 def create_service(db: Session, service: schemas.ServiceCreate):
@@ -377,3 +412,24 @@ def get_appointment(db: Session, appointment_id: int):
         models.Appointment: The retrieved appointment.
     """
     return db.query(models.Appointment).filter(models.Appointment.id == appointment_id).first()
+
+# ------------------------
+# Supplier Availabilities
+# ------------------------
+def create_supplier_availability(db: Session, availability: schemas.SupplierAvailabilityCreate):
+    record_id = utils.generate_uuid()
+    db_avail = models.SupplierAvailability(
+        id=record_id,
+        supplier_id=availability.supplier_id,
+        day_of_week=availability.day_of_week.lower(),  # store consistently
+        start_time=availability.start_time,
+        end_time=availability.end_time,
+    )
+    db.add(db_avail)
+    db.commit()
+    db.refresh(db_avail)
+    return db_avail
+
+def get_supplier_availabilities(db: Session, supplier_id: str):
+    return db.query(models.SupplierAvailability).filter_by(supplier_id=supplier_id).all()
+

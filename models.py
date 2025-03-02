@@ -1,6 +1,7 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, DECIMAL, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, DECIMAL, ForeignKey, Time
 import database
+
 
 class User(database.Base):
     """
@@ -187,5 +188,16 @@ class Appointment(database.Base):
     post_id = Column(String, ForeignKey('posts.id'), comment='Reference to task for scheduling')
     supplier_id = Column(String, ForeignKey('users.id'))
     customer_id = Column(String, ForeignKey('users.id'))
-    appointment_time = Column(DateTime)
+    appointment_time = Column(DateTime, nullable=False)  # start time
+    end_time = Column(DateTime, nullable=True)           # new field for end time
     created_at = Column(DateTime, default=datetime.now)
+
+
+class SupplierAvailability(database.Base):
+    __tablename__ = "supplier_availabilities"
+
+    id = Column(String, primary_key=True)
+    supplier_id = Column(String, ForeignKey('users.id'))
+    day_of_week = Column(String)    # e.g. "monday"
+    start_time = Column(Time)       # "09:00:00"
+    end_time = Column(Time)         # "17:00:00"
