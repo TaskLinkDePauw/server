@@ -5,7 +5,7 @@ import os
 from typing import List, Generator
 
 
-import repository, schemas
+import repository, schemas, models
 from database import SessionLocal, Base, engine, time
 from pipeline.rag_pipeline import RAGPipeline
 from pipeline.data_storing.supplier_pdf_ingestion import ingest_supplier_pdf
@@ -281,9 +281,19 @@ def search_for_supplier(
 
     # 6) Combine
     final_sorted = verified_sorted + unverified_sorted
+    
+    from pipeline.output.structured_output import ask_chatgpt_structured
+
+    # 6.5) Call ChatGPT for structured output
+    summary_response = ask_chatgpt_structured(
+        user_query=query,
+        retrieved_docs=final_sorted,
+        openai_api_key=rag_pipeline.openai_api_key,  # or pipeline uses global key
+        method="pydantic"  # or "function_calling"
+    )
 
     # 7) Return
-    return {"results": final_sorted}
+    return {"results": final_sorted, "summary": summary_response}
 
 #  ------------------------
 #  Supplier Availability Endpoint
@@ -323,7 +333,7 @@ def list_availabilities_for_supplier(
 @app.post("/bids/", response_model=schemas.Bid)
 def create_bid(bid: schemas.BidCreate, db: Session = Depends(get_db)):
     """
-    Create a new bid.
+    Create a new bid. Supplier offers to help on a post.
     """
     return repository.create_bid(db=db, bid=bid)
 
@@ -495,3 +505,26 @@ def list_bids_for_post(post_id: str, db: Session = Depends(get_db)):
     # '-x["supplier_rating"]' => higher rating first
 
     return results_sorted
+
+@app.post("/bids/{bid_id}/accept")
+def accept_bid(bid_id: str, db: Session = Depends(get_db)):
+    """
+    Accept a specific bid. This typically changes the post status to 'accepted',
+    the bid status to 'accepted', etc. Then the user can proceed to scheduling.
+    """
+    db_bid = repository.get_bid(db, bid_id=bid_id)
+    if not db_bid:
+        raise HTTPException(404, "Bid not found")
+
+    # Mark the bid as 'accepted'
+    db_bid.status = "accepted"
+    db.commit()
+    db.refresh(db_bid)
+
+    # Optionally mark the post as 'accepted' or 'in_progress'
+    post = repository.get_post(db, db_bid.post_id)
+    if post:
+        post.status = "accepted"
+        db.commit()
+
+    return {"detail": "Bid accepted", "bid_id": bid_id, "post_id": post.id if post else None}
