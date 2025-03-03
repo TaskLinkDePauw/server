@@ -35,7 +35,7 @@ def create_user(db: Session, user: schemas.UserCreate):
     db.refresh(db_user)
     return db_user
 
-def get_user(db: Session, user_id: int):
+def get_user(db: Session, user_id: str):
     """
     Retrieve a user by their ID.
 
@@ -100,7 +100,7 @@ def create_post(db: Session, post: schemas.PostCreate):
     db.refresh(db_post)
     return db_post
 
-def get_post(db: Session, post_id: int):
+def get_post(db: Session, post_id: str):
     """
     Retrieve a post by its ID.
 
@@ -142,7 +142,7 @@ def create_bid(db: Session, bid: schemas.BidCreate):
     db.refresh(db_bid)
     return db_bid
 
-def get_bid(db: Session, bid_id: int):
+def get_bid(db: Session, bid_id: str):
     """
     Retrieve a bid by its ID.
 
@@ -181,7 +181,7 @@ def create_message(db: Session, message: schemas.MessageCreate):
     db.refresh(db_message)
     return db_message
 
-def get_message(db: Session, message_id: int):
+def get_message(db: Session, message_id: str):
     """
     Retrieve a message by its ID.
 
@@ -222,7 +222,7 @@ def create_review(db: Session, review: schemas.ReviewCreate):
     db.refresh(db_review)
     return db_review
 
-def get_review(db: Session, review_id: int):
+def get_review(db: Session, review_id: str):
     """
     Retrieve a review by its ID.
 
@@ -294,7 +294,7 @@ def create_service(db: Session, service: schemas.ServiceCreate):
     db.refresh(db_service)
     return db_service
 
-def get_service(db: Session, service_id: int):
+def get_service(db: Session, service_id: str):
     """
     Retrieve a service by its ID.
 
@@ -307,10 +307,26 @@ def get_service(db: Session, service_id: int):
     """
     return db.query(models.Service).filter(models.Service.id == service_id).first()
 
+def add_supplier_service(db: Session, supplier_id: str, service_id: str):
+    """
+    Associate a supplier with a service.
+    """
+    supplier_service_id = utils.generate_uuid()
+    db_supplier_service = models.SupplierService(
+        id=supplier_service_id,
+        supplier_id=supplier_id,
+        service_id=service_id
+    )
+    db.add(db_supplier_service)
+    db.commit()
+    db.refresh(db_supplier_service)
+    return db_supplier_service
+
+
 # ------------------------
 # Supplier Services (Association)
 # ------------------------
-def add_supplier_service(db: Session, supplier_id: int, service_id: int):
+def add_supplier_service(db: Session, supplier_id: str, service_id: str):
     """
     Associate a supplier with a service.
 
@@ -360,7 +376,7 @@ def create_transaction(db: Session, transaction: schemas.TransactionCreate):
     db.refresh(db_transaction)
     return db_transaction
 
-def get_transaction(db: Session, transaction_id: int):
+def get_transaction(db: Session, transaction_id: str):
     """
     Retrieve a transaction by its ID.
 
@@ -400,7 +416,7 @@ def create_appointment(db: Session, appointment: schemas.AppointmentCreate):
     db.refresh(db_appointment)
     return db_appointment
 
-def get_appointment(db: Session, appointment_id: int):
+def get_appointment(db: Session, appointment_id: str):
     """
     Retrieve an appointment by its ID.
 

@@ -25,6 +25,9 @@ class User(BaseModel):
     is_supplier: bool = False
     is_verified: bool = False
     created_at: datetime
+    
+    # NEW: Add detected_role
+    detected_role: Optional[str] = None
 
 class UserCreate(BaseModel):
     """

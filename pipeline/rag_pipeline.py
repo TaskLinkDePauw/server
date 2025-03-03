@@ -6,10 +6,9 @@ from pymongo.server_api import ServerApi
 from sentence_transformers import SentenceTransformer
 
 # Local imports
-from .log_utils import log_event
-from .data_storing.chunking_utils import read_and_chunk_pdf_adaptive
-from .data_storing.embedding_utils import embed_and_store, embed_and_store_in_batches, batch_embed_texts
-from .routing.router import route_query_keyword, route_query_llm, route_query_semantic
+from .log_util import log_event, log_error
+from .data_storing.embedding_utils import embed_and_store_in_batches
+from .routing.router import route_query_llm
 from .re_rank.re_rank import re_rank_results
 from .output.structured_output import build_summary_prompt, ask_chatgpt_structured
 from .query_ops.multi_query import generate_multi_queries
@@ -208,4 +207,20 @@ class RAGPipeline:
 
         log_event("SearchDone", f"Final result count: {len(final_results)}")
         return final_results
+    
+    def load_roles_from_db(self):
+        """
+        Loads role definitions from the 'roles' collection and returns a dict
+        suitable for LLM or semantic routing.
+        """
+        role_templates = {}
+        try:
+            roles_coll = self.db["roles"]
+            all_roles = roles_coll.find()
+            for doc in all_roles:
+                # doc: { "role_name": "dog groomer", "role_description": "..."}
+                role_templates[doc["role_name"]] = doc["role_description"]
+        except Exception as e:
+            log_error("LoadRolesError", str(e))
+        return role_templates
     

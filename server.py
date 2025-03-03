@@ -6,7 +6,8 @@ from typing import List, Generator
 
 
 import repository, schemas, models
-from database import SessionLocal, Base, engine, time
+from database import SessionLocal, Base, engine
+from datetime import time  # if you need it for parsing times
 from pipeline.rag_pipeline import RAGPipeline
 from pipeline.data_storing.supplier_pdf_ingestion import ingest_supplier_pdf
 
@@ -15,7 +16,7 @@ Base.metadata.create_all(bind=engine)
 
 # Initialize your pipeline once (global or inside some factory)
 MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://...")
-DB_NAME = "my_rag_db"
+DB_NAME = "test_db"
 COLLECTION_NAME = "chunks"
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", None)
 
@@ -185,9 +186,7 @@ def search_for_supplier(
     #     ...
     #   },
     #   ...
-    # ]
-    
-    chunk_matches = rag_pipeline.rag_search(query, top_k=10)
+    # ]    
     if not chunk_matches:
         # create a new post
         new_post = repository.create_post(db, schemas.PostCreate(

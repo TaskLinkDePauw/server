@@ -26,8 +26,8 @@ def detect_role_from_text(text_snippet: str, openai_api_key: str) -> str:
     try:
         # Ensure the global openai.api_key is set:
         openai.api_key = openai_api_key
-
-        resp = openai.ChatCompletion.create(
+        client = openai.Client(api_key=openai_api_key)
+        resp = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "You are a helpful AI."},
@@ -61,42 +61,45 @@ def ingest_supplier_pdf(
     Returns the detected role (string).
     """
 
-    # 1) Chunk
-    chunks = read_and_chunk_pdf_adaptive(pdf_path, max_words=150)
-    if not chunks:
-        log_event("EmptyPDF", f"No text found in PDF {pdf_path}")
-        return "unknown"
+    try:
+        # 1) Chunk
+        chunks = read_and_chunk_pdf_adaptive(pdf_path, max_words=150)
+        if not chunks:
+            log_event("EmptyPDF", f"No text found in PDF {pdf_path}")
+            return "unknown"
 
-    # 2) Auto-detect role
-    if pipeline.openai_api_key:
-        combined_text = " ".join(chunks[:3])  # short snippet
-        service_role = detect_role_from_text(combined_text, pipeline.openai_api_key)
-    else:
-        service_role = "unknown"
+        # 2) Auto-detect role
+        if pipeline.openai_api_key:
+            combined_text = " ".join(chunks[:3])  # short snippet
+            service_role = detect_role_from_text(combined_text, pipeline.openai_api_key)
+        else:
+            service_role = "unknown"
 
-    # 3) Remove old docs for this supplier to handle re-embedding
-    pipeline.collection.delete_many({"supplier_id": supplier_id})
+        # 3) Remove old docs for this supplier to handle re-embedding
+        pipeline.collection.delete_many({"supplier_id": supplier_id})
 
-    # 4) Embed in batches
-    embeddings = batch_embed_texts(pipeline.embedding_model, chunks, batch_size=16)
+        # 4) Embed in batches
+        embeddings = batch_embed_texts(pipeline.embedding_model, chunks, batch_size=16)
 
-    # Construct docs
-    docs_to_insert = []
-    for idx, chunk_text in enumerate(chunks):
-        doc = {
-            "_id": f"{supplier_id}_chunk_{idx}",
-            "supplier_id": supplier_id,
-            "service_role": service_role,
-            "chunk_text": chunk_text,
-            "embedding": embeddings[idx].tolist(),
-        }
-        docs_to_insert.append(doc)
+        # Construct docs
+        docs_to_insert = []
+        for idx, chunk_text in enumerate(chunks):
+            doc = {
+                "_id": f"{supplier_id}_chunk_{idx}",
+                "supplier_id": supplier_id,
+                "service_role": service_role,
+                "chunk_text": chunk_text,
+                "embedding": embeddings[idx].tolist(),
+            }
+            docs_to_insert.append(doc)
 
-    if docs_to_insert:
-        pipeline.collection.insert_many(docs_to_insert)
-        log_event(
-            "IngestedSupplierPDF",
-            f"Ingested {len(docs_to_insert)} docs for supplier_id={supplier_id}, role={service_role}"
-        )
+        if docs_to_insert:
+            pipeline.collection.insert_many(docs_to_insert)
+            log_event("IngestedSupplierPDF",
+                      f"Ingested {len(docs_to_insert)} docs for supplier_id={supplier_id}, role={service_role}")
 
-    return service_role
+        return service_role
+
+    except Exception as e:
+        log_event("IngestSupplierPDFError", str(e))
+        raise  # re-raise so that the server returns an error (or handle it gracefully)

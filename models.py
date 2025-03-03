@@ -25,6 +25,7 @@ class User(database.Base):
     is_supplier = Column(Boolean, default=False, comment='customer or supplier')
     is_verified = Column(Boolean, default=False, comment='For suppliers')
     created_at = Column(DateTime, default=datetime.now)
+    detected_role = Column(String, nullable=True)
 
 class Post(database.Base):
     """
