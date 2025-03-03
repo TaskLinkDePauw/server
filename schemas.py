@@ -23,6 +23,8 @@ class User(BaseModel):
     is_supplier: bool = False
     is_verified: bool = False
     created_at: datetime
+    class Config:
+        orm_mode = True
 
 class UserCreate(BaseModel):
     """
@@ -124,7 +126,7 @@ class BidCreate(BaseModel):
     supplier_id: str
     price: Decimal
     message: str
-    status: str
+    status: str = "pending"
 
 # ------------------------
 # Messages
@@ -215,6 +217,9 @@ class Service(BaseModel):
     id: str
     name: str
     description: str
+    
+    class Config:
+        orm_mode = True
 
 class ServiceCreate(BaseModel):
     """
@@ -240,6 +245,9 @@ class SupplierService(BaseModel):
     """
     supplier_id: str
     service_id: str
+    
+    class Config:
+     orm_mode = True
 
 # ------------------------
 # Transactions
@@ -314,3 +322,8 @@ class AppointmentCreate(BaseModel):
     supplier_id: str
     customer_id: str
     appointment_time: datetime
+
+
+class SearchRequest(BaseModel):
+    query: str
+    requester_id: str
