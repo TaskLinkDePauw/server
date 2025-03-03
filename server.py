@@ -1,8 +1,11 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, File, UploadFile, Body
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
+from pipeline.supplier_pdf_ingestion import ingest_supplier_pdf
+
 
 import repository, schemas
+from schemas import SearchRequest
 from database import SessionLocal, Base, engine
 
 # Create the tables in the database
@@ -11,6 +14,15 @@ Base.metadata.create_all(bind=engine)
 # Create the FastAPI app
 app = FastAPI()
 
+# MONGO_URI, OPENAI_API_KEY from .env
+from dotenv import load_dotenv
+import os
+from pipeline.minimal_rag_pipeline import MinimalRAGPipeline
+load_dotenv()
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+rag_pipeline = MinimalRAGPipeline(mongo_uri=MONGO_URI, openai_api_key=OPENAI_API_KEY)
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -59,6 +71,96 @@ def get_user(user_id: str, db: Session = Depends(get_db)):
     return db_user
 
 # ------------------------
+# Suppliers Endpoints
+# ------------------------
+@app.post("/suppliers/{supplier_id}/upload_pdf")
+def upload_pdf_for_supplier(
+    supplier_id: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    """
+    1) Save PDF locally
+    2) Ingest -> chunk + embed in Mongo + auto-detect roles + store in Postgres
+    """
+    # Check if supplier exists
+    sup = repository.get_user(db, supplier_id)
+    if not sup or not sup.is_supplier:
+        raise HTTPException(400, "User is not a supplier")
+
+    temp_path = f"/tmp/{file.filename}"
+    with open(temp_path, "wb") as f:
+        f.write(file.file.read())
+
+    # Call advanced ingestion
+    msg = ingest_supplier_pdf(
+        db=db,
+        pipeline=rag_pipeline,
+        pdf_path=temp_path,
+        supplier_id=supplier_id,
+        openai_api_key=OPENAI_API_KEY
+    )
+
+    return {"detail": "PDF uploaded & embedded", "supplier_id": supplier_id, "info": msg}
+
+# ---------- Search for Supplier (AI-Assisted) ----------
+@app.post("/search_for_supplier")
+def search_for_supplier(
+    payload: SearchRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    1) do a vector search in Mongo
+    2) if no match => create an open post
+    3) if match => return them sorted
+    """
+    query = payload.query
+    requester_id = payload.requester_id
+    matches = rag_pipeline.search_suppliers(query, top_k=5)
+    if not matches:
+        # create open post
+        new_post_data = schemas.PostCreate(
+            title=f"Request from direct search: {query[:25]}",
+            description=query,
+            category="general",
+            status="open",
+            requester_id=requester_id
+        )
+        new_post = repository.create_post(db, new_post_data)
+        return {
+            "results": [],
+            "summary": "No direct matches found. Created an open request.",
+            "post_id": new_post.id
+        }
+
+    # If we do have matches:
+    final = []
+    for m in matches:
+        if "supplier_id" not in m:
+            # Skip documents without a supplier_id
+            continue
+        sp_id = m["supplier_id"]
+        sp_user = repository.get_user(db, sp_id)
+        if not sp_user:
+            continue
+        avg_rating = repository.get_supplier_avg_rating(db, sp_id)
+        final.append({
+            "supplier_id": sp_id,
+            "username": sp_user.username,
+            "score": m["score"],
+            "rating": avg_rating,
+            "chunk_text": m["chunk_text"]
+        })
+        
+    print("DEBUG: Final supplier matches:", final)
+
+    # sort by score desc, rating desc
+    sorted_final = sorted(final, key=lambda x: (-x["score"], -x["rating"]))
+    return {
+        "results": sorted_final,
+        "summary": "Direct matches found."
+    }
+# ------------------------
 # Posts Endpoints
 # ------------------------
 @app.post("/posts/", response_model=schemas.Post)
@@ -97,6 +199,51 @@ def get_bid(bid_id: str, db: Session = Depends(get_db)):
     if db_bid is None:
         raise HTTPException(status_code=404, detail="Bid not found")
     return db_bid
+
+@app.post("/bids/", response_model=schemas.Bid)
+def create_bid(bid_data: schemas.BidCreate, db: Session = Depends(get_db)):
+    return repository.create_bid(db, bid_data)
+
+@app.get("/posts/{post_id}/bids")
+def list_bids_for_post(post_id: str, db: Session = Depends(get_db)):
+    post_obj = repository.get_post(db, post_id)
+    if not post_obj:
+        raise HTTPException(404, "Post not found")
+    bids = repository.list_bids_for_post(db, post_id)
+    results = []
+    for b in bids:
+        sup_rating = repository.get_supplier_avg_rating(db, b.supplier_id)
+        sup_user = repository.get_user(db, b.supplier_id)
+        results.append({
+            "bid_id": b.id,
+            "supplier_id": b.supplier_id,
+            "supplier_name": sup_user.username if sup_user else None,
+            "supplier_rating": sup_rating,
+            "price": str(b.price),
+            "message": b.message,
+            "status": b.status
+        })
+    # Sort verified first, then rating desc
+    results_sorted = sorted(results, key=lambda x: (-(1 if repository.get_user(db, x["supplier_id"]).is_verified else 0), -x["supplier_rating"]))
+    return results_sorted
+
+@app.post("/bids/{bid_id}/accept")
+def accept_bid(bid_id: str, db: Session = Depends(get_db)):
+    b = repository.get_bid(db, bid_id)
+    if not b:
+        raise HTTPException(404, "Bid not found")
+    b.status = "accepted"
+    db.commit()
+    db.refresh(b)
+    post_obj = repository.get_post(db, b.post_id)
+    if post_obj:
+        post_obj.status = "accepted"
+        db.commit()
+    return {
+        "detail": "Bid accepted",
+        "bid_id": bid_id,
+        "post_id": post_obj.id if post_obj else None
+    }
 
 # ------------------------
 # Messages Endpoints

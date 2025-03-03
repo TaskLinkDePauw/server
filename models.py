@@ -1,6 +1,8 @@
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, DECIMAL, ForeignKey
 import database
+from sqlalchemy.sql import func
+from sqlalchemy.orm import declarative_base, relationship
 
 class User(database.Base):
     """
@@ -24,6 +26,10 @@ class User(database.Base):
     is_supplier = Column(Boolean, default=False, comment='customer or supplier')
     is_verified = Column(Boolean, default=False, comment='For suppliers')
     created_at = Column(DateTime, default=datetime.now)
+    
+     # Relationship to SupplierServices
+    services = relationship("SupplierService", back_populates="supplier")
+
 
 class Post(database.Base):
     """
@@ -131,6 +137,9 @@ class Service(database.Base):
     id = Column(String, primary_key=True)
     name = Column(String)
     description = Column(Text)
+    
+    # Relationship to SupplierService
+    suppliers = relationship("SupplierService", back_populates="service")
 
 
 class SupplierService(database.Base):
@@ -145,6 +154,9 @@ class SupplierService(database.Base):
 
     supplier_id = Column(String, ForeignKey('users.id'), primary_key=True)
     service_id = Column(String, ForeignKey('services.id'), primary_key=True)
+    
+    supplier = relationship("User", back_populates="services")
+    service = relationship("Service", back_populates="suppliers")
 
 
 class Transaction(database.Base):

@@ -1,6 +1,8 @@
 import uuid
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 import models, schemas
+from typing import Optional
 import utils
 
 # ------------------------
@@ -33,7 +35,7 @@ def create_user(db: Session, user: schemas.UserCreate):
     db.refresh(db_user)
     return db_user
 
-def get_user(db: Session, user_id: int):
+def get_user(db: Session, user_id: str):
     """
     Retrieve a user by their ID.
 
@@ -98,7 +100,7 @@ def create_post(db: Session, post: schemas.PostCreate):
     db.refresh(db_post)
     return db_post
 
-def get_post(db: Session, post_id: int):
+def get_post(db: Session, post_id: str):
     """
     Retrieve a post by its ID.
 
@@ -140,7 +142,7 @@ def create_bid(db: Session, bid: schemas.BidCreate):
     db.refresh(db_bid)
     return db_bid
 
-def get_bid(db: Session, bid_id: int):
+def get_bid(db: Session, bid_id: str):
     """
     Retrieve a bid by its ID.
 
@@ -153,6 +155,8 @@ def get_bid(db: Session, bid_id: int):
     """
     return db.query(models.Bid).filter(models.Bid.id == bid_id).first()
 
+def list_bids_for_post(db: Session, post_id: str):
+    return db.query(models.Bid).filter(models.Bid.post_id == post_id).all()
 # ------------------------
 # Messages
 # ------------------------
@@ -220,7 +224,7 @@ def create_review(db: Session, review: schemas.ReviewCreate):
     db.refresh(db_review)
     return db_review
 
-def get_review(db: Session, review_id: int):
+def get_review(db: Session, review_id: str):
     """
     Retrieve a review by its ID.
 
@@ -232,6 +236,12 @@ def get_review(db: Session, review_id: int):
         models.Review: The retrieved review.
     """
     return db.query(models.Review).filter(models.Review.id == review_id).first()
+
+def get_supplier_avg_rating(db: Session, supplier_id: str) -> float:
+    res = db.query(func.avg(models.Review.rating)).filter(models.Review.supplier_id == supplier_id).first()
+    if res and res[0]:
+        return float(res[0])
+    return 0.0
 
 # ------------------------
 # Services
@@ -259,7 +269,7 @@ def create_service(db: Session, service: schemas.ServiceCreate):
     db.refresh(db_service)
     return db_service
 
-def get_service(db: Session, service_id: int):
+def get_service(db: Session, service_id: str):
     """
     Retrieve a service by its ID.
 
@@ -271,6 +281,28 @@ def get_service(db: Session, service_id: int):
         models.Service: The retrieved service.
     """
     return db.query(models.Service).filter(models.Service.id == service_id).first()
+
+def get_service_by_name(db: Session, name: str) -> Optional[models.Service]:
+    return db.query(models.Service).filter(models.Service.name == name.lower()).first()
+
+def list_services_for_supplier(db: Session, supplier_id: str):
+    # Return the service info for a given supplier
+    associations = db.query(models.SupplierService).filter(models.SupplierService.supplier_id == supplier_id).all()
+    # You can do a join or just read association.service
+    return associations
+
+def link_supplier_service(db: Session, supplier_id: str, service_id: str) -> models.SupplierService:
+    """
+    Link a supplier to a service in the 'supplier_services' association table.
+    """
+    association = models.SupplierService(
+        supplier_id=supplier_id,
+        service_id=service_id
+    )
+    db.add(association)
+    db.commit()
+    db.refresh(association)
+    return association
 
 # ------------------------
 # Supplier Services (Association)
