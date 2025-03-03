@@ -17,12 +17,22 @@ app = FastAPI()
 # MONGO_URI, OPENAI_API_KEY from .env
 from dotenv import load_dotenv
 import os
-from pipeline.minimal_rag_pipeline import MinimalRAGPipeline
+from pipeline.enhance_rag_pipeline import EnhancedRAGPipeline
+from pipeline.log_util import log_info, log_event
 load_dotenv()
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-rag_pipeline = MinimalRAGPipeline(mongo_uri=MONGO_URI, openai_api_key=OPENAI_API_KEY)
+# We pass a "db_session_factory" -> a function that returns a fresh DB session
+def db_session_factory():
+    return SessionLocal()
+
+# Create the advanced pipeline
+rag_pipeline = EnhancedRAGPipeline(
+    mongo_uri=MONGO_URI,
+    openai_api_key=OPENAI_API_KEY,
+    db_session_factory=db_session_factory
+)
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -116,11 +126,12 @@ def search_for_supplier(
     """
     query = payload.query
     requester_id = payload.requester_id
-    matches = rag_pipeline.search_suppliers(query, top_k=5)
-    if not matches:
-        # create open post
+     # 1) advanced pipeline search
+    chunk_matches = rag_pipeline.advanced_search(user_query=query, top_k=5)
+    if not chunk_matches:
+        # no direct match => fallback open post
         new_post_data = schemas.PostCreate(
-            title=f"Request from direct search: {query[:25]}",
+            title=f"Request from advanced search: {query[:30]}",
             description=query,
             category="general",
             status="open",
@@ -133,32 +144,37 @@ def search_for_supplier(
             "post_id": new_post.id
         }
 
-    # If we do have matches:
-    final = []
-    for m in matches:
+    # 2) build final results
+    # chunk_matches is a list of e.g. {"supplier_id":..., "chunk_text":..., "score":...}
+    results_list = []
+    for m in chunk_matches:
         if "supplier_id" not in m:
             # Skip documents without a supplier_id
+            print("DEBUG: Document missing supplier_id:", m)
             continue
         sp_id = m["supplier_id"]
         sp_user = repository.get_user(db, sp_id)
         if not sp_user:
             continue
-        avg_rating = repository.get_supplier_avg_rating(db, sp_id)
-        final.append({
+        rating = repository.get_supplier_avg_rating(db, sp_id)
+        results_list.append({
             "supplier_id": sp_id,
             "username": sp_user.username,
             "score": m["score"],
-            "rating": avg_rating,
+            "rating": rating,
             "chunk_text": m["chunk_text"]
         })
-        
-    print("DEBUG: Final supplier matches:", final)
 
-    # sort by score desc, rating desc
-    sorted_final = sorted(final, key=lambda x: (-x["score"], -x["rating"]))
+    # 3) Optionally call structured summary 
+    #    We'll do a single summary for all top docs
+    structured_summary = rag_pipeline.get_structured_summary(query, results_list)
+        
+    print("DEBUG: Final supplier matches:", results_list)
+
+    
     return {
-        "results": sorted_final,
-        "summary": "Direct matches found."
+        "results": results_list,
+        "structured_summary": structured_summary
     }
 # ------------------------
 # Posts Endpoints

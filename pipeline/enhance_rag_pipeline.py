@@ -17,7 +17,6 @@ def generate_multi_queries(user_query, num_queries=3, openai_api_key=None, log_e
         return [user_query]
 
     try:
-        import openai
         openai.api_key = openai_api_key
 
         prompt = f"""
@@ -45,9 +44,6 @@ def generate_multi_queries(user_query, num_queries=3, openai_api_key=None, log_e
             log_info("MultiQueryGenerated", f"Original: {user_query}, Queries: {multi_queries}")
 
         return multi_queries
-    except openai.error.OpenAIError as e:
-        log_error("OpenAIError", f"generate_multi_queries: {str(e)}")
-        return [user_query]
     except Exception as e:
         log_error("UnexpectedError", f"generate_multi_queries: {str(e)}")
         return [user_query]
@@ -67,7 +63,6 @@ def decompose_query(user_query, openai_api_key=None, log_event_fn=None):
     Return them each on a separate line.
     """
     try:
-        import openai
         openai.api_key = openai_api_key
         client = openai.Client(api_key=openai_api_key)
 
@@ -170,7 +165,6 @@ def re_rank_results_llm(user_query: str, results: List[dict], top_k=3, openai_ap
     """
     
     try:
-        import openai
         openai.api_key = openai_api_key
         
         client = openai.Client(api_key=openai_api_key)
