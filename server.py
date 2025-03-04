@@ -200,6 +200,14 @@ def get_post(post_id: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Post not found")
     return db_post
 
+@app.get("/posts/user/{requester_id}", response_model=list[schemas.Post])
+def get_posts(requester_id: str, db: Session = Depends(get_db)):
+    """
+    Retrieve posts by requester_id.
+    """
+    db_posts = repository.get_posts(db=db, requester_id=requester_id)
+    return db_posts
+
 # ------------------------
 # Bids Endpoints
 # ------------------------
