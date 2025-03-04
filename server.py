@@ -157,24 +157,28 @@ def search_for_supplier(
         if not sp_user:
             continue
         rating = repository.get_supplier_avg_rating(db, sp_id)
+        
+        # 2.5) For doc-level summary, pass [match_doc] to get_structured_summary
+        # so it only uses that single chunk doc as 'context' for GPT:
+        doc_summary = rag_pipeline.get_structured_summary(query, [m])  # pass a list of 1 doc
+
         results_list.append({
             "supplier_id": sp_id,
             "username": sp_user.username,
             "score": m["score"],
             "rating": rating,
-            "chunk_text": m["chunk_text"]
+            # "chunk_text": m["chunk_text"]
+            "structured_summary": doc_summary
         })
 
     # 3) Optionally call structured summary 
-    #    We'll do a single summary for all top docs
-    structured_summary = rag_pipeline.get_structured_summary(query, results_list)
-        
+    #    We'll do a single summary for all top docs        
     print("DEBUG: Final supplier matches:", results_list)
 
     
     return {
         "results": results_list,
-        "structured_summary": structured_summary
+        "report": "Found matches for the query."
     }
 # ------------------------
 # Posts Endpoints

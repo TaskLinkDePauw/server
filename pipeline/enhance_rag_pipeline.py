@@ -28,7 +28,7 @@ def generate_multi_queries(user_query, num_queries=3, openai_api_key=None, log_e
         Separate each query by a newline.
         """
         response = openai.ChatCompletion.create(
-            model="gpt-3.5-turbo-0125",
+            model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content": "You are a helpful query rewriter."},
                 {"role": "user", "content": prompt},
@@ -68,7 +68,7 @@ def decompose_query(user_query, openai_api_key=None, log_event_fn=None):
 
 
         resp = client.chat.completions.create(
-            model="gpt-3.5-turbo-0125",
+            model="gpt-3.5-turbo",
             messages=[{"role": "user", "content": decomposition_prompt}],
             temperature=0.7
         )
@@ -110,7 +110,7 @@ def route_query_llm(user_query: str, openai_api_key: str, known_services: List[s
         client = openai.Client(api_key=openai_api_key)
 
         resp = client.chat.completions.create(
-            model="gpt-3.5-turbo-0125",
+            model="gpt-3.5-turbo",
             messages=[
                 {"role": "system", "content":"You are a role classifier."},
                 {"role":"user","content":prompt}
@@ -169,7 +169,7 @@ def re_rank_results_llm(user_query: str, results: List[dict], top_k=3, openai_ap
         
         client = openai.Client(api_key=openai_api_key)
         resp = client.chat.completions.create(
-            model="gpt-3.5-turbo-0125",
+            model="gpt-3.5-turbo",
             messages=[
                 {"role":"system","content":"You are a re-ranker."},
                 {"role":"user","content":re_rank_prompt}
@@ -258,8 +258,15 @@ class EnhancedRAGPipeline:
             partial = self._vector_search(eq, top_k=top_k*2)
             all_results.extend(partial)
 
+        deduped_by_supplier = {}
+        for r in all_results:
+            sup = r["supplier_id"]
+            # if we haven't stored that supplier yet, or if we want the best score chunk
+            if sup not in deduped_by_supplier or r["score"] > deduped_by_supplier[sup]["score"]:
+                deduped_by_supplier[sup] = r
+        final_list = list(deduped_by_supplier.values())
         # 6) re-rank
-        final = re_rank_results_llm(user_query, all_results, top_k=top_k, openai_api_key=self.openai_api_key)
+        final = re_rank_results_llm(user_query, final_list, top_k=top_k, openai_api_key=self.openai_api_key)
         return final
 
     def _vector_search(self, query_text: str, top_k=3):
