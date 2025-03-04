@@ -302,6 +302,17 @@ def get_service(db: Session, service_id: str):
 def get_service_by_name(db: Session, name: str) -> Optional[models.Service]:
     return db.query(models.Service).filter(models.Service.name == name.lower()).first()
 
+def get_suppliers_for_service(db: Session, service_name: str):
+    # 1) Get the service object by name
+    svc = get_service_by_name(db, service_name)
+    if not svc:
+        return []
+    # 2) Find all association rows for that service
+    rows = db.query(models.SupplierService).filter_by(service_id=svc.id).all()
+    # 3) Collect the supplier_ids
+    supplier_ids = [row.supplier_id for row in rows]
+    return supplier_ids
+
 def list_services_for_supplier(db: Session, supplier_id: str):
     # Return the service info for a given supplier
     associations = db.query(models.SupplierService).filter(models.SupplierService.supplier_id == supplier_id).all()
