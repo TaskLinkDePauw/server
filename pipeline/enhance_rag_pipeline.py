@@ -233,20 +233,43 @@ class EnhancedRAGPipeline:
         finally:
             db.close()
 
+    def _get_suppliers_for_service(self, service_name: str):
+        """
+        Return a set/list of supplier_ids from the 'supplier_services' 
+        association that match service_name.
+        If the service doesn't exist, returns an empty list => means no match.
+        """
+        db = self.db_session_factory()
+        try:
+            from repository import get_service_by_name, get_suppliers_for_service
+            svc_obj = get_service_by_name(db, service_name.lower())
+            if not svc_obj:
+                return []
+            supplier_ids = get_suppliers_for_service(db, service_name.lower())
+            return supplier_ids
+        finally:
+            db.close()
+
     def advanced_search(self, user_query: str, top_k=3):
         # 1) known services from DB
         known_services = self._get_known_services()
         if not known_services:
-            known_services = ["plumber","electrician","barber","nail technician","personal trainer"]
+            # If we literally have none in DB, we can't route
+            return []
 
         # 2) route
         chosen_service = route_query_llm(user_query, self.openai_api_key, known_services)
         log_info("RoutingResult", f"Chosen service: {chosen_service}")
+        if chosen_service == "all" or chosen_service not in known_services:
+            return []
 
+        # 2.5) find all suppliers who have that chosen_service
+        valid_supplier_ids = set(self._get_suppliers_for_service(chosen_service))
+        if not valid_supplier_ids:
+            # no suppliers => fallback
+            return []
         # 3) decomposition
-        sub_queries = decompose_query(user_query, self.openai_api_key, log_event_fn=log_event)
-        if not sub_queries:
-            sub_queries = [user_query]
+        sub_queries = decompose_query(user_query, self.openai_api_key, log_event_fn=log_event) or [user_query] 
 
         # 4) multi-query expansions on the first sub-query
         expansions = generate_multi_queries(sub_queries[0], num_queries=2, openai_api_key=self.openai_api_key, log_event_fn=log_event)
@@ -258,18 +281,30 @@ class EnhancedRAGPipeline:
             partial = self._vector_search(eq, top_k=top_k*2)
             all_results.extend(partial)
 
+        # 5.5) Filter out docs whose supplier_id not in valid_supplier_ids
+        # e.g. a doc from a supplier who doesn't offer 'electrician' => skip
+        filtered_by_service = []
+        for doc in all_results:
+            sup_id = doc.get("supplier_id")
+            if sup_id in valid_supplier_ids:
+                filtered_by_service.append(doc)
+                
+        # 6) deduplicate by supplier_id
         deduped_by_supplier = {}
         for r in all_results:
+            if "supplier_id" not in r:
+                continue
             sup = r["supplier_id"]
             # if we haven't stored that supplier yet, or if we want the best score chunk
             if sup not in deduped_by_supplier or r["score"] > deduped_by_supplier[sup]["score"]:
                 deduped_by_supplier[sup] = r
         final_list = list(deduped_by_supplier.values())
-        # 6) re-rank
+        
+        # 6.5) re-rank
         final = re_rank_results_llm(user_query, final_list, top_k=top_k, openai_api_key=self.openai_api_key)
         return final
 
-    def _vector_search(self, query_text: str, top_k=3):
+    def _vector_search(self, query_text: str, top_k=3, min_score=0.6):
         q_emb = self.embedding_model.encode([query_text])[0].tolist()
         pipeline = [
             {
@@ -290,7 +325,9 @@ class EnhancedRAGPipeline:
                 }
             }
         ]
-        results = list(self.collection.aggregate(pipeline))
+        docs = list(self.collection.aggregate(pipeline))
+        # Filter out docs below the threshold
+        results = [d for d in docs if d["score"] >= min_score]
         return results
 
     def get_structured_summary(self, user_query: str, final_sorted_results: list):
