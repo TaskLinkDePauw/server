@@ -20,6 +20,10 @@ class User(BaseModel):
     id: str
     username: str
     email: str
+    full_name: str
+    avatar_url: str 
+    experience_description: str = ""
+    rating: int = 4
     is_supplier: bool = False
     is_verified: bool = False
     created_at: datetime
@@ -38,6 +42,10 @@ class UserCreate(BaseModel):
     """
     username: str
     password: str
+    full_name: str
+    experience_description: str = ""
+    rating: int = 4
+    avatar_url: str = "http://www.gravatar.com/avatar/?d=mp"
     email: str
     is_supplier: bool = False
     is_verified: bool = False
@@ -68,6 +76,8 @@ class Post(BaseModel):
     category: str
     status: str
     requester_id: str
+    offers: int = 0
+    views: int = 0
     created_at: datetime
 
 class PostCreate(BaseModel):

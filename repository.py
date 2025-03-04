@@ -26,6 +26,10 @@ def create_user(db: Session, user: schemas.UserCreate):
         id=id,
         username=user.username,
         hashed_password=hashed_password,
+        experience_description=user.experience_description,
+        rating=user.rating,
+        full_name=user.full_name,
+        avatar_url=user.avatar_url,
         email=user.email,
         is_supplier=user.is_supplier,
         is_verified=user.is_verified
@@ -113,6 +117,19 @@ def get_post(db: Session, post_id: str):
     """
     return db.query(models.Post).filter(models.Post.id == post_id).first()
 
+def get_posts(db: Session, requester_id: str):
+    """
+    Retrieve posts by requester_id.
+
+    Args:
+        db (Session): The database session.
+        requester_id (str): The requester ID.
+
+    Returns:
+        List[models.Post]: The list of retrieved posts.
+    """
+    return db.query(models.Post).filter(models.Post.requester_id == requester_id).all()
+ 
 # ------------------------
 # Bids
 # ------------------------
