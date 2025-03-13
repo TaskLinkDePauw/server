@@ -1,6 +1,7 @@
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, DECIMAL, ForeignKey
 import database
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 from sqlalchemy.orm import declarative_base, relationship
 
@@ -33,6 +34,15 @@ class User(database.Base):
     
      # Relationship to SupplierServices
     services = relationship("SupplierService", back_populates="supplier")
+    
+    # NEW columns
+    business_name = Column(String, comment="Supplier's business/brand name")
+    pdf_summary = Column(Text, comment="Auto-generated summary from PDF")
+    # store all availability slots in one column as an array of JSON objects.
+    availabilities = Column(JSONB, default=[], nullable=True)
+    skills = Column(JSONB, default=[], comment="User's skill set as a JSON array")
+
+
 
 
 class Post(database.Base):
@@ -205,3 +215,4 @@ class Appointment(database.Base):
     customer_id = Column(String, ForeignKey('users.id'))
     appointment_time = Column(DateTime)
     created_at = Column(DateTime, default=datetime.now)
+

@@ -2,7 +2,7 @@ import uuid
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 import models, schemas
-from typing import Optional
+from typing import Optional, List
 import utils
 
 # ------------------------
@@ -74,6 +74,27 @@ def login_user(db: Session, username: str, password: str):
     if not utils.verify_password(password, user.hashed_password):
         return None
 
+    return user
+
+# When the user finishes the setup process on the frontend, they will update their profile with their business name and PDF summary.
+def update_user_profile(
+    db: Session,
+    user_id: str,
+    business_name: Optional[str],
+    pdf_summary: Optional[str],
+    skills: Optional[List[str]]
+):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        return None
+    if business_name is not None:
+        user.business_name = business_name
+    if pdf_summary is not None:
+        user.pdf_summary = pdf_summary
+    if skills is not None:
+        user.skills = skills
+    db.commit()
+    db.refresh(user)
     return user
 
 # ------------------------
@@ -331,7 +352,19 @@ def link_supplier_service(db: Session, supplier_id: str, service_id: str) -> mod
     db.commit()
     db.refresh(association)
     return association
+def store_and_link_service(db: Session, supplier_id: str, role_name: str):
+    # 1) Normalize the role name if needed
+    role_name = role_name.strip().lower()
 
+    # 2) Check if service already exists
+    existing_svc = get_service_by_name(db, role_name)
+    if not existing_svc:
+        # create new service
+        svc_create = schemas.ServiceCreate(name=role_name, description="")
+        existing_svc = create_service(db, svc_create)
+
+    # 3) Link service to supplier
+    link_supplier_service(db, supplier_id, existing_svc.id)
 # ------------------------
 # Supplier Services (Association)
 # ------------------------
@@ -437,3 +470,33 @@ def get_appointment(db: Session, appointment_id: int):
         models.Appointment: The retrieved appointment.
     """
     return db.query(models.Appointment).filter(models.Appointment.id == appointment_id).first()
+
+
+# ------------------------
+# Supplier Availability
+# ------------------------
+def list_supplier_availabilities(db: Session, supplier_id: str):
+    """
+    Retrieve the supplier's availability as a JSON array.
+    """
+    user = db.query(models.User).filter(models.User.id == supplier_id).first()
+    if user:
+        return user.availabilities or []
+    return []
+
+def set_supplier_availability(
+    db: Session,
+    supplier_id: str,
+    slots: list[schemas.Availability]
+):
+    """
+    Replace the supplier's current availability with a new list of availability slots.
+    """
+    user = db.query(models.User).filter(models.User.id == supplier_id).first()
+    if not user:
+        return {"detail": "Supplier not found."}
+    # Convert each slot (a Pydantic model) to a dict and update the JSON column.
+    user.availabilities = [slot.dict() for slot in slots]
+    db.commit()
+    db.refresh(user)
+    return {"detail": "Updated availability.", "availabilities": user.availabilities}

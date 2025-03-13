@@ -1,7 +1,19 @@
 from pydantic import BaseModel
 from datetime import datetime
 from decimal import Decimal
+from typing import Optional, List
 
+
+
+# ------------------------
+# Supplier Availability
+# ------------------------
+class Availability(BaseModel):
+    day_of_week: str
+    is_available: bool
+    start_time: str  # e.g., "09:00"
+    end_time: str    # e.g., "17:00"
+    
 # ------------------------
 # Users
 # ------------------------
@@ -27,6 +39,13 @@ class User(BaseModel):
     is_supplier: bool = False
     is_verified: bool = False
     created_at: datetime
+    
+    # NEW
+    business_name: Optional[str] = None
+    pdf_summary: Optional[str] = None
+    availabilities: List[Availability] = []
+    skills: List[str] = []
+
     class Config:
         orm_mode = True
 
@@ -337,3 +356,7 @@ class AppointmentCreate(BaseModel):
 class SearchRequest(BaseModel):
     query: str
     requester_id: str
+
+
+
+
