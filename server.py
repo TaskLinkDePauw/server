@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Depends, HTTPException, File, UploadFile, Body
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from pipeline.supplier_pdf_ingestion import ingest_supplier_pdf
+from pipeline.supplier_pdf_ingestion import ingest_supplier_pdf, ingest_supplier_pdf_with_summary
 
 
 import repository, schemas
@@ -113,6 +113,25 @@ def upload_pdf_for_supplier(
 
     return {"detail": "PDF uploaded & embedded", "supplier_id": supplier_id, "info": msg}
 
+@app.post("/suppliers/{supplier_id}/upload_pdf_summary")
+def upload_pdf_summary_for_supplier(
+    supplier_id: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    # Save the file temporarily.
+    temp_path = f"/tmp/{file.filename}"
+    with open(temp_path, "wb") as f:
+        f.write(file.file.read())
+    
+    # Call the ingestion function that produces a summary (no Postgres updates)
+    result = ingest_supplier_pdf_with_summary(
+        pdf_path=temp_path,
+        supplier_id=supplier_id,
+        openai_api_key=OPENAI_API_KEY,
+        pipeline=rag_pipeline
+    )
+    return result
 # ---------- Search for Supplier (AI-Assisted) ----------
 @app.post("/search_for_supplier")
 def search_for_supplier(
@@ -184,6 +203,46 @@ def search_for_supplier(
         "results": results_list,
         "report": "Found matches for the query."
     }
+
+@app.put("/suppliers/{supplier_id}/profile")
+def update_user_profile_endpoint(
+    supplier_id: str,
+    payload: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Expects JSON like:
+    {
+      "businessName": "...",
+      "pdfSummary": "...",
+      "skills": ["react", "nodejs", "communication"]
+      "role": "accountant"  # or an array of roles
+
+    }
+    """
+    business_name = payload.get("businessName")
+    pdf_summary = payload.get("pdfSummary")
+    skills = payload.get("skills")  # e.g. list of strings
+    role = payload.get("role")      # single string or array
+    print(role)
+
+    user = repository.update_user_profile(
+        db=db,
+        user_id=supplier_id,
+        business_name=business_name,
+        pdf_summary=pdf_summary,
+        skills=skills
+    )
+    if role:
+        # If you want to handle multiple roles, you could do:
+        # for r in (role if isinstance(role, list) else [role]):
+        #     store_and_link_service(db, supplier_id, r)
+        # else for single:
+        repository.store_and_link_service(db, supplier_id, role)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
 # ------------------------
 # Posts Endpoints
 # ------------------------
@@ -386,3 +445,18 @@ def get_appointment(appointment_id: str, db: Session = Depends(get_db)):
     if db_appointment is None:
         raise HTTPException(status_code=404, detail="Appointment not found")
     return db_appointment
+
+
+# ------------------------
+# Supplier Availability Endpoints
+# ------------------------
+@app.post("/suppliers/{supplier_id}/availability")
+def set_supplier_availability_endpoint(
+    supplier_id: str,
+    slots: list[schemas.Availability],
+    db: Session = Depends(get_db)
+):
+    """
+    Endpoint to replace the supplier's availability with the new list of slots.
+    """
+    return repository.set_supplier_availability(db, supplier_id, slots)
